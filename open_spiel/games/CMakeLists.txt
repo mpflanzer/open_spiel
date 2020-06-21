@@ -84,6 +84,8 @@ set(GAME_SOURCES
   pig.h
   quoridor.cc
   quoridor.h
+  qwinto.cc
+  qwinto.h
   skat.cc
   skat.h
   tic_tac_toe.cc
@@ -331,6 +333,10 @@ add_test(pig_test pig_test)
 add_executable(quoridor_test quoridor_test.cc ${OPEN_SPIEL_OBJECTS}
                $<TARGET_OBJECTS:tests>)
 add_test(quoridor_test quoridor_test)
+
+add_executable(qwinto_test qwinto_test.cc ${OPEN_SPIEL_OBJECTS}
+               $<TARGET_OBJECTS:tests>)
+add_test(qwinto_test qwinto_test)
 
 add_executable(skat_test skat_test.cc ${OPEN_SPIEL_OBJECTS}
                $<TARGET_OBJECTS:tests>)
