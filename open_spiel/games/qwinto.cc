@@ -207,6 +207,10 @@ std::vector<Action> QwintoState::LegalActions(Player player) const {
 
   std::vector<Action> movelist;
 
+  if(IsTerminal()) {
+    return movelist;
+  }
+
   switch(phase_) {
     case Phase::kSelectDice:
       //SPIEL_CHECK_EQ(player, current_player_);
