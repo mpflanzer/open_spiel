@@ -79,6 +79,7 @@ class PyspielTest(absltest.TestCase):
         "phantom_ttt",
         "pig",
         "quoridor",
+        "qwinto",
         "skat",
         "tic_tac_toe",
         "tiny_bridge_2p",

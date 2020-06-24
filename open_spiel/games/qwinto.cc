@@ -88,8 +88,9 @@ std::string dice2str(Die dice) {
 
 QwintoState::QwintoState(std::shared_ptr<const Game> game)
     : SimMoveState(game),
-      player_(kSimultaneousPlayerId),
+      player_{0},
       current_player_{0},
+      num_dice_rolls_{0},
       dice_{kInvalidDie},
       dice_outcome_{0},
       phase_{Phase::kSelectDice} {
@@ -109,60 +110,59 @@ void QwintoState::DoApplyAction(Action action) {
   if (IsSimultaneousNode()) {
     ApplyFlatJointAction(action);
     return;
+  } else if(IsChanceNode()) {
+    SPIEL_CHECK_EQ(phase_, Phase::kRollDice);
+    dice_outcome_ = action;
+    player_ = current_player_;
+    return;
   }
 
-  SPIEL_CHECK_TRUE(IsChanceNode());
-  
-  dice_outcome_ = action;
-  player_ = kSimultaneousPlayerId;
-}
-
-void QwintoState::DoApplyActions(const std::vector<Action>& actions) {
-  // Check the actions are valid.
-  SPIEL_CHECK_EQ(actions.size(), num_players_);
-
-  if(phase_ != Phase::kSubmitPoints) {
-    for(int p = 0; p < num_players_; ++p) {
-      if(p != current_player_) {
-        SPIEL_CHECK_EQ(actions[p], kInvalidAction);
-      }
-    }
-  }
-
-  auto &action = actions[current_player_];
-
-  SPIEL_CHECK_NE(action, kInvalidAction);
+  SPIEL_CHECK_GE(player_, 0);
+  SPIEL_CHECK_LT(player_, num_players_);
 
   switch(phase_) {
     case Phase::kSelectDice:
       dice_ = static_cast<Die>(action);
       player_ = kChancePlayerId;
       phase_ = Phase::kRollDice;
+      num_dice_rolls_ = 1;
       break;
     case Phase::kRollDice:
       if(action == 0) {
+        SPIEL_CHECK_LT(num_dice_rolls_, kDefaultNumDiceRolls);
+        ++num_dice_rolls_;
         player_ = kChancePlayerId;
+      } else {
+        phase_ = Phase::kSubmitPoints;
+        player_ = kSimultaneousPlayerId;
       }
-
-      phase_ = Phase::kSubmitPoints;
       break;
     case Phase::kSubmitPoints:
-      for(int p = 0; p < num_players_; ++p) {
-        if(actions[p] == kInvalidAction) {
-          continue;
-        }
-
-        if(actions[p] == kDefaultNumDice * kDefaultNumFields) {
-          SPIEL_CHECK_EQ(p, current_player_);
-          scores_[p * (kDefaultNumDice * kDefaultNumFields + 1) + actions[p]] += kDefaultMissPoints;
-        } else {
-          scores_[p * (kDefaultNumDice * kDefaultNumFields + 1) + actions[p]] = dice_outcome_;
-        }
-      }
-      phase_ = Phase::kSelectDice;
-      current_player_ = (current_player_ + 1) % num_players_;
+      SpielFatalError(absl::StrCat("Player ", player_, " is invalid for phase ", phase_));
       break;
   }
+}
+
+void QwintoState::DoApplyActions(const std::vector<Action>& actions) {
+  // Check the actions are valid.
+  SPIEL_CHECK_EQ(actions.size(), num_players_);
+  SPIEL_CHECK_EQ(phase_, Phase::kSubmitPoints);
+
+  for(int p = 0; p < num_players_; ++p) {
+    if(actions[p] == kActionSkip) {
+      SPIEL_CHECK_NE(p, current_player_);
+      continue;
+    } else if(actions[p] == kActionMiss) {
+      SPIEL_CHECK_EQ(p, current_player_);
+      scores_[p * (kDefaultNumDice * kDefaultNumFields + 1) + actions[p]] += kDefaultMissPoints;
+    } else {
+      scores_[p * (kDefaultNumDice * kDefaultNumFields + 1) + actions[p]] = dice_outcome_;
+    }
+  }
+
+  phase_ = Phase::kSelectDice;
+  current_player_ = (current_player_ + 1) % num_players_;
+  player_ = current_player_;
 }
 
 std::vector<std::pair<Action, double>> QwintoState::ChanceOutcomes() const {
@@ -201,21 +201,25 @@ std::vector<Action> QwintoState::LegalActions(Player player) const {
   if (player == kSimultaneousPlayerId) return LegalFlatJointActions();
   if (player == kChancePlayerId) return LegalChanceOutcomes();
   if (player == kTerminalPlayerId) return std::vector<Action>();
+
   SPIEL_CHECK_GE(player, 0);
   SPIEL_CHECK_LT(player, num_players_);
 
   std::vector<Action> movelist;
 
-  if(phase_ != Phase::kSubmitPoints && player != current_player_) {
-    return {kInvalidAction};
-  }
-
   switch(phase_) {
     case Phase::kSelectDice:
+      //SPIEL_CHECK_EQ(player, current_player_);
       movelist = {kOrange, kPurple, kYellow, kOrange | kPurple, kOrange | kYellow, kPurple | kYellow, kOrange | kPurple | kYellow};
       break;
     case Phase::kRollDice:
-      movelist = {0, 1};
+      //SPIEL_CHECK_EQ(player, current_player_);
+      if(num_dice_rolls_ < kDefaultNumDiceRolls) {
+        movelist.push_back(0);
+      }
+
+      movelist.push_back(1);
+
       break;
     case Phase::kSubmitPoints:
       {
@@ -278,13 +282,10 @@ std::vector<Action> QwintoState::LegalActions(Player player) const {
           movelist.push_back(i);
         }
 
-        // If nothing else is possible add a miss
-        if(movelist.empty()) {
-          if(player == current_player_) {
-            movelist.push_back(kDefaultNumDice * kDefaultNumFields);
-          } else {
-            movelist.push_back(kInvalidAction);
-          }
+        if(player == current_player_) {
+          movelist.push_back(kActionMiss);
+        } else {
+          movelist.push_back(kActionSkip);
         }
 
         break;
@@ -303,7 +304,7 @@ std::string QwintoState::ActionToString(Player player,
 
   if (player == kChancePlayerId) {
     SPIEL_CHECK_GE(action_id, 1);
-    SPIEL_CHECK_LT(action_id, 18);
+    SPIEL_CHECK_LE(action_id, 18);
 
     return absl::StrCat("Dice outcome ", action_id);
   } else {
@@ -486,6 +487,10 @@ void QwintoState::ObservationTensor(Player player,
   values->push_back(phase_ == Phase::kRollDice);
   values->push_back(phase_ == Phase::kSubmitPoints);
 
+  for(int i = 0; i < kDefaultNumDiceRolls; ++i) {
+    values->push_back(i == num_dice_rolls_);
+  }
+
   // Dice
   values->push_back(dice_ & kOrange);
   values->push_back(dice_ & kYellow);
@@ -530,6 +535,8 @@ std::vector<int> QwintoGame::ObservationTensorShape() const {
     return {
       // 1-hot encoding of phase
       3 +
+      // 1-hot encoding of dice rolls
+      kDefaultNumDiceRolls +
       // 1-hot encoding of selected dice
       kDefaultNumDice +
       // 1-hot encoding of dice outcome

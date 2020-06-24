@@ -63,15 +63,19 @@ enum Die {
   kYellow = 4,
 };
 
-enum class Phase {
+enum Phase {
   kSelectDice,
   kRollDice,
   kSubmitPoints,
 };
 
 inline constexpr int kDefaultNumPlayers = 1;
+inline constexpr int kDefaultNumDiceRolls = 2;
 inline constexpr int kDefaultNumDice = 3;
 inline constexpr int kDefaultNumFields = 9;
+
+inline constexpr int kActionMiss = kDefaultNumDice * kDefaultNumFields;
+inline constexpr int kActionSkip = kDefaultNumDice * kDefaultNumFields + 1;
 
 class QwintoState : public SimMoveState {
  public:
@@ -98,6 +102,7 @@ class QwintoState : public SimMoveState {
  private:
   Player player_;
   Player current_player_;
+  int num_dice_rolls_;
   Die dice_;
   int dice_outcome_;
   Phase phase_;
@@ -108,7 +113,7 @@ class QwintoGame : public Game {
  public:
   explicit QwintoGame(const GameParameters& params);
 
-  int NumDistinctActions() const override { return kDefaultNumDice * kDefaultNumFields + 1; }
+  int NumDistinctActions() const override { return kActionSkip + 1; }
   std::unique_ptr<State> NewInitialState() const override;
   int MaxChanceOutcomes() const override;
   int NumPlayers() const override { return num_players_; }
